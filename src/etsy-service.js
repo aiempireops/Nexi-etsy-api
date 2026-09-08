@@ -62,11 +62,71 @@ export class EtsyService {
     return this.request(`/users/${userId}/shops`);
   }
 
-  async getListings({ state = 'active', limit = 25, offset = 0 } = {}) {
+  async getShopId() {
     const shop = await this.getShop();
     if (!shop?.shop_id) throw new Error('Connected Etsy user does not have a shop');
-    return this.request(`/shops/${shop.shop_id}/listings`, {
+    return shop.shop_id;
+  }
+
+  async getListings({ state = 'active', limit = 25, offset = 0 } = {}) {
+    const shopId = await this.getShopId();
+    return this.request(`/shops/${shopId}/listings`, {
       query: { state, limit, offset },
     });
+  }
+
+  async getListing(listingId, { includes = ['Images'] } = {}) {
+    const id = String(listingId || '');
+    if (!/^\d+$/.test(id) || id === '0') throw new Error('Invalid Etsy listing ID');
+    return this.request(`/listings/${id}`, {
+      query: { includes: Array.isArray(includes) ? includes.join(',') : includes },
+    });
+  }
+
+  async getListingImages(listingId) {
+    const id = String(listingId || '');
+    if (!/^\d+$/.test(id) || id === '0') throw new Error('Invalid Etsy listing ID');
+    return this.request(`/listings/${id}/images`);
+  }
+
+  async verifyConnection() {
+    const status = await this.status();
+    if (!status.connected) {
+      return {
+        connected: false,
+        shop_readable: false,
+        listings_readable: false,
+        active_listing_count: null,
+      };
+    }
+
+    const result = {
+      connected: true,
+      shop_readable: false,
+      listings_readable: false,
+      active_listing_count: null,
+    };
+
+    try {
+      const shop = await this.getShop();
+      result.shop_readable = Boolean(shop?.shop_id);
+      result.shop_name = shop?.shop_name || null;
+    } catch (error) {
+      result.shop_error_status = Number.isInteger(error?.status) ? error.status : null;
+    }
+
+    try {
+      const listings = await this.getListings({ state: 'active', limit: 1, offset: 0 });
+      result.listings_readable = true;
+      result.active_listing_count = Number.isInteger(listings?.count)
+        ? listings.count
+        : Array.isArray(listings?.results)
+          ? listings.results.length
+          : null;
+    } catch (error) {
+      result.listings_error_status = Number.isInteger(error?.status) ? error.status : null;
+    }
+
+    return result;
   }
 }
