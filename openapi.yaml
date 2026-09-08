@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: Nexi Etsy API
+  version: 0.2.0
+  description: Controlled server-side Etsy Open API v3 bridge for the connected Nexa shop.
+servers:
+  - url: https://nexi-etsy-api-production.up.railway.app
+security:
+  - InternalApiKey: []
+paths:
+  /api/etsy/verify:
+    get:
+      operationId: verifyEtsyConnection
+      summary: Verify Etsy shop and listing access
+      responses:
+        '200':
+          description: Connection verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected: { type: boolean }
+                  shop_readable: { type: boolean }
+                  listings_readable: { type: boolean }
+                  active_listing_count: { type: [integer, 'null'] }
+                  shop_name: { type: [string, 'null'] }
+  /api/etsy/write-status:
+    get:
+      operationId: getEtsyWriteStatus
+      summary: Check whether Etsy listing writes are enabled
+      responses:
+        '200':
+          description: Write safety switch state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+  /api/etsy/shop:
+    get:
+      operationId: getConnectedEtsyShop
+      summary: Get the connected Etsy shop
+      responses:
+        '200':
+          description: Etsy shop object
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /api/etsy/listings:
+    get:
+      operationId: listEtsyListings
+      summary: List listings from the connected Etsy shop
+      parameters:
+        - in: query
+          name: state
+          schema:
+            type: string
+            enum: [active, inactive, sold_out, draft, expired]
+            default: active
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Etsy listing collection
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /api/etsy/listings/{listingId}:
+    get:
+      operationId: getEtsyListing
+      summary: Get one Etsy listing with optional associations
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - in: query
+          name: includes
+          description: Comma-separated Etsy associations such as Images,Shop,Translations,Videos,Personalization.
+          schema: { type: string, default: Images }
+      responses:
+        '200':
+          description: Etsy listing
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    patch:
+      operationId: updateEtsyListing
+      summary: Update allowlisted Etsy listing fields
+      description: Requires ETSY_WRITE_ENABLED=true in addition to listings_w OAuth scope.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title: { type: string }
+                description: { type: string }
+                tags:
+                  type: array
+                  items: { type: string }
+                materials:
+                  type: array
+                  items: { type: string }
+                styles:
+                  type: array
+                  items: { type: string }
+                image_ids:
+                  type: array
+                  items: { type: integer }
+                should_auto_renew: { type: boolean }
+                taxonomy_id: { type: integer, minimum: 1 }
+                state: { type: string }
+                price: { type: number, exclusiveMinimum: 0 }
+                quantity: { type: integer, minimum: 0 }
+                shop_section_id: { type: integer, minimum: 1 }
+                is_taxable: { type: boolean }
+                who_made: { type: string }
+                when_made: { type: string }
+                is_supply: { type: boolean }
+                shipping_profile_id: { type: integer, minimum: 1 }
+                return_policy_id: { type: integer, minimum: 1 }
+                processing_min: { type: integer }
+                processing_max: { type: integer }
+                readiness_state_id: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Updated Etsy listing
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '503':
+          description: Etsy write operations are disabled
+  /api/etsy/listings/{listingId}/images:
+    get:
+      operationId: getEtsyListingImages
+      summary: Get images for one Etsy listing
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+      responses:
+        '200':
+          description: Etsy listing image collection
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+components:
+  securitySchemes:
+    InternalApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Railway INTERNAL_API_KEY. Do not expose this value publicly.
+  parameters:
+    ListingId:
+      in: path
+      name: listingId
+      required: true
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]*$'
