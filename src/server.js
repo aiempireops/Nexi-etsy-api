@@ -52,9 +52,25 @@ function requireInternalApiKey(req, res, next) {
   next();
 }
 
+function requireEtsyWriteEnabled(_req, res, next) {
+  if (!config.etsyWriteEnabled) {
+    return res.status(503).json({
+      error: 'Etsy write operations are disabled',
+      hint: 'Set ETSY_WRITE_ENABLED=true only when write access is intentionally enabled.',
+    });
+  }
+  next();
+}
+
 function isLoopbackRequest(req) {
   const address = req.socket?.remoteAddress || '';
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function listValue(value) {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return value;
 }
 
 app.get('/', (_req, res) => {
@@ -168,6 +184,10 @@ app.get('/api/etsy/verify', async (_req, res, next) => {
   }
 });
 
+app.get('/api/etsy/write-status', (_req, res) => {
+  res.json({ enabled: config.etsyWriteEnabled });
+});
+
 app.get('/api/etsy/me', async (_req, res, next) => {
   try {
     res.json(await etsy.getMe());
@@ -211,6 +231,49 @@ app.get('/api/etsy/listings/:listingId', async (req, res, next) => {
       .map((value) => value.trim())
       .filter(Boolean);
     res.json(await etsy.getListing(req.params.listingId, { includes }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/etsy/listings/:listingId', requireEtsyWriteEnabled, async (req, res, next) => {
+  try {
+    const allowed = new Set([
+      'title',
+      'description',
+      'tags',
+      'materials',
+      'styles',
+      'image_ids',
+      'should_auto_renew',
+      'taxonomy_id',
+      'state',
+      'price',
+      'quantity',
+      'shop_section_id',
+      'is_taxable',
+      'who_made',
+      'when_made',
+      'is_supply',
+      'shipping_profile_id',
+      'return_policy_id',
+      'processing_min',
+      'processing_max',
+      'readiness_state_id',
+    ]);
+    const listFields = new Set(['tags', 'materials', 'styles', 'image_ids']);
+    const updates = {};
+
+    for (const [key, value] of Object.entries(req.body || {})) {
+      if (!allowed.has(key)) continue;
+      updates[key] = listFields.has(key) ? listValue(value) : value;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No supported Etsy listing fields supplied' });
+    }
+
+    res.json(await etsy.updateListing(req.params.listingId, updates));
   } catch (error) {
     next(error);
   }
