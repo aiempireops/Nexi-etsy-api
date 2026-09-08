@@ -65,46 +65,6 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'nexi-etsy-api' });
 });
 
-// Temporary, intentionally minimal diagnostic endpoint. It never returns tokens,
-// API keys, cookies, user IDs, shop IDs, listing titles, or other secrets.
-app.get('/diagnostics/etsy', async (_req, res) => {
-  const result = {
-    connected: false,
-    shop_readable: false,
-    listings_readable: false,
-    active_listing_sample_count: 0,
-  };
-
-  try {
-    const status = await etsy.status();
-    result.connected = Boolean(status.connected);
-    if (!result.connected) return res.json(result);
-
-    try {
-      const shop = await etsy.getShop();
-      result.shop_readable = Boolean(shop?.shop_id);
-    } catch (error) {
-      result.shop_error = error instanceof EtsyApiError ? `etsy_${error.status || 'error'}` : 'internal_error';
-    }
-
-    try {
-      const listings = await etsy.getListings({ state: 'active', limit: 10, offset: 0 });
-      result.listings_readable = true;
-      if (Array.isArray(listings?.results)) {
-        result.active_listing_sample_count = listings.results.length;
-      } else if (Array.isArray(listings)) {
-        result.active_listing_sample_count = listings.length;
-      }
-    } catch (error) {
-      result.listings_error = error instanceof EtsyApiError ? `etsy_${error.status || 'error'}` : 'internal_error';
-    }
-
-    return res.json(result);
-  } catch {
-    return res.status(500).json({ ...result, diagnostics_error: 'internal_error' });
-  }
-});
-
 app.get('/auth/etsy', (_req, res) => {
   const auth = client.createAuthorizationRequest();
   const session = sealJson(
