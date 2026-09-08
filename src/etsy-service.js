@@ -31,7 +31,11 @@ export class EtsyService {
     const expiresSoon = !token.expires_at || token.expires_at <= Date.now() + 60_000;
     if (forceRefresh || expiresSoon) {
       if (!token.refresh_token) throw new Error('Etsy token cannot be refreshed; reconnect the account');
-      token = await this.client.refreshAccessToken(token.refresh_token);
+      const refreshed = await this.client.refreshAccessToken(token.refresh_token);
+      token = {
+        ...refreshed,
+        refresh_token: refreshed.refresh_token || token.refresh_token,
+      };
       await this.tokenStore.set(token);
     }
     return token;
