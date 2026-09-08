@@ -15,7 +15,7 @@ const etsy = new EtsyService(client, tokenStore);
 const updates = [
   {
     listing_id: 4568848990,
-    title: 'Pet Sitting & Dog Walking Business Spreadsheet | Client CRM, Visit Tracker, Route Planner & Profit',
+    title: 'Pet Sitting & Dog Walking Business Spreadsheet | Client CRM, Visit Tracker, Route Planner and Profit',
     tags: ['pet sitting biz','dog walking biz','pet sitter template','dog walker template','pet client crm','visit tracker','route planner','booking tracker','pet care sheet','client tracker','profit tracker','service business','pet business excel'],
   },
   {
