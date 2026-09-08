@@ -8,6 +8,10 @@ const client = new EtsyClient(config.etsy);
 const tokenStore = new EncryptedFileTokenStore(config.tokenStorePath, config.tokenEncryptionSecret);
 const etsy = new EtsyService(client, tokenStore);
 
+function bestImageUrl(image) {
+  return image?.url_fullxfull || image?.url_570xN || image?.url_300x300 || null;
+}
+
 try {
   const collection = await etsy.getListings({ state: 'active', limit: 100, offset: 0 });
   const baseListings = Array.isArray(collection?.results) ? collection.results : [];
@@ -16,12 +20,13 @@ try {
   for (const base of baseListings) {
     const detail = await etsy.getListing(base.listing_id, { includes: ['Images'] });
     const images = Array.isArray(detail?.images) ? detail.images : [];
-    const first = images[0] || {};
+    const socialImages = images.map(bestImageUrl).filter(Boolean).slice(0, 4);
     catalog.push({
       listing_id: detail?.listing_id ?? base.listing_id,
       title: detail?.title ?? base.title ?? '',
       url: detail?.url ?? null,
-      first_image: first?.url_fullxfull || first?.url_570xN || first?.url_300x300 || null,
+      first_image: socialImages[0] || null,
+      social_images: socialImages,
       image_count: images.length,
     });
   }
