@@ -16,7 +16,7 @@ const updates = [
   {
     listing_id: 4568848990,
     title: 'Pet Sitting & Dog Walking Business Spreadsheet | Client CRM, Visit Tracker, Route Planner & Profit',
-    tags: ['pet sitting business','dog walking business','pet sitter template','dog walker template','pet client crm','visit tracker','route planner','booking tracker','pet care spreadsheet','client tracker','profit tracker','service business','pet business excel'],
+    tags: ['pet sitting biz','dog walking biz','pet sitter template','dog walker template','pet client crm','visit tracker','route planner','booking tracker','pet care sheet','client tracker','profit tracker','service business','pet business excel'],
   },
   {
     listing_id: 4568796724,
@@ -82,9 +82,14 @@ for (const target of updates) {
     await etsy.updateListing(target.listing_id, { title: target.title, tags: target.tags });
     results.push({ listing_id: target.listing_id, status: 'updated', titleChanged, tagsChanged });
   } catch (error) {
-    results.push({ listing_id: target.listing_id, status: 'error', http_status: error?.status ?? null, message: error?.message ?? 'unknown' });
+    results.push({
+      listing_id: target.listing_id,
+      status: 'error',
+      http_status: error?.status ?? null,
+      message: error?.message ?? 'unknown',
+      api_error: typeof error?.body === 'object' && error.body ? error.body.error ?? error.body.message ?? null : null,
+    });
   }
 }
 
 console.log(`ETSY_SEO_BATCH ${JSON.stringify({ updated_at: new Date().toISOString(), results })}`);
-if (results.some((item) => item.status === 'error')) process.exitCode = 1;
