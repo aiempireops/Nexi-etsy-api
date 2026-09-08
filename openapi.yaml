@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Nexi Etsy API
-  version: 0.2.0
-  description: Controlled server-side Etsy Open API v3 bridge for the connected Nexa shop.
+  version: 0.3.0
+  description: Controlled server-side Etsy Open API v3 bridge for the connected Nexa shop. Listing mutations are disabled unless ETSY_WRITE_ENABLED=true; publishing additionally requires ETSY_PUBLISH_ENABLED=true.
 servers:
   - url: https://nexi-etsy-api-production.up.railway.app
 security:
@@ -28,16 +28,17 @@ paths:
   /api/etsy/write-status:
     get:
       operationId: getEtsyWriteStatus
-      summary: Check whether Etsy listing writes are enabled
+      summary: Check Etsy mutation and publishing safety switches
       responses:
         '200':
-          description: Write safety switch state
+          description: Safety switch state
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  enabled: { type: boolean }
+                  writes_enabled: { type: boolean }
+                  publishing_enabled: { type: boolean }
   /api/etsy/shop:
     get:
       operationId: getConnectedEtsyShop
@@ -71,6 +72,58 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+  /api/etsy/listings/drafts:
+    post:
+      operationId: createEtsyDraftListing
+      summary: Create an Etsy draft listing
+      description: Requires ETSY_WRITE_ENABLED=true. Defaults type to download when omitted. This does not publish the listing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity, title, description, price, who_made, when_made, taxonomy_id]
+              additionalProperties: false
+              properties:
+                quantity: { type: integer, minimum: 1 }
+                title: { type: string }
+                description: { type: string }
+                price: { type: number, minimum: 0 }
+                who_made: { type: string }
+                when_made: { type: string }
+                taxonomy_id: { type: integer, minimum: 1 }
+                type: { type: string, enum: [physical, download, both], default: download }
+                tags:
+                  type: array
+                  maxItems: 13
+                  items: { type: string }
+                materials:
+                  type: array
+                  items: { type: string }
+                image_ids:
+                  type: array
+                  maxItems: 20
+                  items: { type: integer }
+                is_supply: { type: boolean }
+                is_customizable: { type: boolean }
+                should_auto_renew: { type: boolean }
+                is_taxable: { type: boolean }
+                shop_section_id: { type: integer, minimum: 1 }
+                production_partner_ids:
+                  type: array
+                  items: { type: integer, minimum: 1 }
+                language: { type: string }
+                readiness_state_id: { type: integer, minimum: 1 }
+                return_policy_id: { type: integer, minimum: 1 }
+                shipping_profile_id: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: Created Etsy draft listing
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '503': { description: Etsy write operations are disabled }
   /api/etsy/listings/{listingId}:
     get:
       operationId: getEtsyListing
@@ -90,7 +143,7 @@ paths:
     patch:
       operationId: updateEtsyListing
       summary: Update allowlisted Etsy listing fields
-      description: Requires ETSY_WRITE_ENABLED=true in addition to listings_w OAuth scope.
+      description: Requires ETSY_WRITE_ENABLED=true. Setting state=active additionally requires ETSY_PUBLISH_ENABLED=true.
       parameters:
         - $ref: '#/components/parameters/ListingId'
       requestBody:
@@ -105,20 +158,23 @@ paths:
                 description: { type: string }
                 tags:
                   type: array
+                  maxItems: 13
                   items: { type: string }
                 materials:
                   type: array
                   items: { type: string }
                 styles:
                   type: array
+                  maxItems: 2
                   items: { type: string }
                 image_ids:
                   type: array
+                  maxItems: 20
                   items: { type: integer }
                 should_auto_renew: { type: boolean }
                 taxonomy_id: { type: integer, minimum: 1 }
-                state: { type: string }
-                price: { type: number, exclusiveMinimum: 0 }
+                state: { type: string, enum: [active, inactive] }
+                price: { type: number, minimum: 0 }
                 quantity: { type: integer, minimum: 0 }
                 shop_section_id: { type: integer, minimum: 1 }
                 is_taxable: { type: boolean }
@@ -130,14 +186,28 @@ paths:
                 processing_min: { type: integer }
                 processing_max: { type: integer }
                 readiness_state_id: { type: integer, minimum: 1 }
+                type: { type: string, enum: [physical, download, both] }
       responses:
         '200':
           description: Updated Etsy listing
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
-        '503':
-          description: Etsy write operations are disabled
+        '503': { description: Required write or publish safety switch is disabled }
+  /api/etsy/listings/{listingId}/publish:
+    post:
+      operationId: publishEtsyListing
+      summary: Publish a prepared Etsy listing
+      description: Requires both ETSY_WRITE_ENABLED=true and ETSY_PUBLISH_ENABLED=true. Etsy will reject digital instant-download listings without an attached file and listings without required images.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+      responses:
+        '200':
+          description: Published Etsy listing
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '503': { description: Etsy publishing is disabled }
   /api/etsy/listings/{listingId}/images:
     get:
       operationId: getEtsyListingImages
@@ -150,6 +220,102 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+    post:
+      operationId: uploadEtsyListingImage
+      summary: Upload an image to an Etsy listing
+      description: Requires ETSY_WRITE_ENABLED=true. Send the image bytes as the raw request body.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - in: query
+          name: filename
+          required: true
+          schema: { type: string }
+        - in: query
+          name: rank
+          schema: { type: integer, minimum: 0, maximum: 20, default: 1 }
+        - in: query
+          name: overwrite
+          schema: { type: boolean, default: false }
+        - in: query
+          name: is_watermarked
+          schema: { type: boolean, default: false }
+        - in: query
+          name: alt_text
+          schema: { type: string, maxLength: 500 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded Etsy listing image
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '413': { description: Upload exceeds the 20 MB service limit }
+  /api/etsy/listings/{listingId}/images/{listingImageId}:
+    delete:
+      operationId: deleteEtsyListingImage
+      summary: Delete an image from an Etsy listing
+      description: Requires ETSY_WRITE_ENABLED=true.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - $ref: '#/components/parameters/ListingImageId'
+      responses:
+        '204': { description: Image deleted }
+  /api/etsy/listings/{listingId}/files:
+    get:
+      operationId: getEtsyListingFiles
+      summary: Get digital files attached to an Etsy listing
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+      responses:
+        '200':
+          description: Etsy digital file collection
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    post:
+      operationId: uploadEtsyListingFile
+      summary: Upload a digital product file to an Etsy listing
+      description: Requires ETSY_WRITE_ENABLED=true. Send file bytes as the raw body. The service enforces Etsy's 5-file limit and a 20 MB per-file limit.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - in: query
+          name: filename
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 70
+            pattern: '^[A-Za-z0-9._-]+$'
+        - in: query
+          name: rank
+          schema: { type: integer, minimum: 1, maximum: 5, default: 1 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded Etsy digital file
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '409': { description: Listing already has Etsy's maximum of 5 digital files }
+        '413': { description: Upload exceeds Etsy's 20 MB per-file limit }
+  /api/etsy/listings/{listingId}/files/{listingFileId}:
+    delete:
+      operationId: deleteEtsyListingFile
+      summary: Delete a digital file from an Etsy listing
+      description: Requires ETSY_WRITE_ENABLED=true. Removing the final file from a digital listing can cause Etsy to convert it to a physical listing.
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - $ref: '#/components/parameters/ListingFileId'
+      responses:
+        '204': { description: Digital file deleted }
 components:
   securitySchemes:
     InternalApiKey:
@@ -161,6 +327,20 @@ components:
     ListingId:
       in: path
       name: listingId
+      required: true
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]*$'
+    ListingImageId:
+      in: path
+      name: listingImageId
+      required: true
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]*$'
+    ListingFileId:
+      in: path
+      name: listingFileId
       required: true
       schema:
         type: string
