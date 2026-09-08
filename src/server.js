@@ -52,6 +52,11 @@ function requireInternalApiKey(req, res, next) {
   next();
 }
 
+function isLoopbackRequest(req) {
+  const address = req.socket?.remoteAddress || '';
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
 app.get('/', (_req, res) => {
   res.json({
     service: 'Nexi Etsy API',
@@ -63,6 +68,16 @@ app.get('/', (_req, res) => {
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'nexi-etsy-api' });
+});
+
+// Railway/container-only smoke test. Public requests receive 404 and no API key is needed on loopback.
+app.get('/internal/etsy/verify', async (req, res, next) => {
+  if (!isLoopbackRequest(req)) return res.status(404).json({ error: 'Not found' });
+  try {
+    return res.json(await etsy.verifyConnection());
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.get('/auth/etsy', (_req, res) => {
@@ -145,6 +160,14 @@ app.post('/auth/disconnect', async (_req, res, next) => {
   }
 });
 
+app.get('/api/etsy/verify', async (_req, res, next) => {
+  try {
+    res.json(await etsy.verifyConnection());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/etsy/me', async (_req, res, next) => {
   try {
     res.json(await etsy.getMe());
@@ -168,6 +191,26 @@ app.get('/api/etsy/listings', async (req, res, next) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '25', 10) || 25, 1), 100);
     const offset = Math.max(Number.parseInt(req.query.offset || '0', 10) || 0, 0);
     res.json(await etsy.getListings({ state, limit, offset }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/etsy/listings/:listingId/images', async (req, res, next) => {
+  try {
+    res.json(await etsy.getListingImages(req.params.listingId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/etsy/listings/:listingId', async (req, res, next) => {
+  try {
+    const includes = String(req.query.includes || 'Images')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    res.json(await etsy.getListing(req.params.listingId, { includes }));
   } catch (error) {
     next(error);
   }
