@@ -1,3 +1,22 @@
+function positiveListingId(listingId) {
+  const id = String(listingId || '');
+  if (!/^\d+$/.test(id) || id === '0') throw new Error('Invalid Etsy listing ID');
+  return id;
+}
+
+function toFormBody(values) {
+  const form = new URLSearchParams();
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      form.set(key, value.join(','));
+    } else {
+      form.set(key, String(value));
+    }
+  }
+  return form;
+}
+
 export class EtsyService {
   constructor(client, tokenStore) {
     this.client = client;
@@ -76,17 +95,27 @@ export class EtsyService {
   }
 
   async getListing(listingId, { includes = ['Images'] } = {}) {
-    const id = String(listingId || '');
-    if (!/^\d+$/.test(id) || id === '0') throw new Error('Invalid Etsy listing ID');
+    const id = positiveListingId(listingId);
     return this.request(`/listings/${id}`, {
       query: { includes: Array.isArray(includes) ? includes.join(',') : includes },
     });
   }
 
   async getListingImages(listingId) {
-    const id = String(listingId || '');
-    if (!/^\d+$/.test(id) || id === '0') throw new Error('Invalid Etsy listing ID');
+    const id = positiveListingId(listingId);
     return this.request(`/listings/${id}/images`);
+  }
+
+  async updateListing(listingId, updates) {
+    const id = positiveListingId(listingId);
+    const form = toFormBody(updates);
+    if ([...form.keys()].length === 0) throw new Error('No Etsy listing fields supplied for update');
+    const shopId = await this.getShopId();
+    return this.request(`/shops/${shopId}/listings/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: form,
+    });
   }
 
   async verifyConnection() {
