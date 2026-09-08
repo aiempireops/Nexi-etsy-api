@@ -41,6 +41,7 @@ export function loadConfig() {
     tokenStorePath: path.resolve(process.env.TOKEN_STORE_PATH || '.data/etsy-token.enc'),
     internalApiKey,
     etsyWriteEnabled: booleanFlag(process.env.ETSY_WRITE_ENABLED, false),
+    etsyPublishEnabled: booleanFlag(process.env.ETSY_PUBLISH_ENABLED, false),
     secureCookies: redirectUri.startsWith('https://'),
   };
 }
