@@ -26,4 +26,6 @@ jobs:
           node --check src/token-store.js
           node --check src/etsy.js
           node --check src/etsy-service.js
+          node --check src/etsy-write-service.js
           node --check src/server.js
+          node --check src/server-v2.js
