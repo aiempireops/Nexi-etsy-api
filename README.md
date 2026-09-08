@@ -1,86 +1,82 @@
 # Nexi Etsy API
 
-Server-side bridge for Etsy Open API v3. It handles Etsy OAuth 2.0 Authorization Code + PKCE, encrypted token persistence, automatic refresh, guarded reads, and opt-in listing updates for the connected Etsy shop.
+Server-side Etsy Open API v3 bridge for the connected NexaSystemsStudio shop. It handles OAuth 2.0 + PKCE, encrypted persistent token storage, automatic token refresh, authenticated reads, and tightly guarded listing mutations.
 
-## Implemented
+## Production capabilities
 
-- Etsy OAuth authorization redirect with PKCE/S256 and single-use `state`
-- Encrypted HTTP-only OAuth flow cookie with 10-minute lifetime
-- Authorization-code exchange and AES-256-GCM token persistence
-- Automatic access-token refresh and one retry after a 401
+- Etsy OAuth Authorization Code + PKCE/S256
+- Encrypted AES-256-GCM token persistence on Railway volume `/app/.data`
+- Automatic access-token refresh and one retry after Etsy 401 responses
 - Etsy v3 `x-api-key` authentication using `keystring:shared_secret`
-- Persistent token storage support for Railway volumes
-- Internal API-key protection for connected-account endpoints
-- Connection verification against the Etsy shop and active listings
-- Listing collection, listing-detail and listing-image reads
-- Guarded listing PATCH support using `listings_w`
-- Writes disabled by default with `ETSY_WRITE_ENABLED=false`
-- GitHub Actions CI and Node built-in tests
+- Internal bearer-key protection for all connected-account API endpoints
+- Verified reads of the connected shop and active listings
+- Listing details, images and digital-file reads
+- Draft listing creation, defaulting to digital `type=download`
+- Listing field updates
+- Raw-binary listing image uploads
+- Raw-binary digital file uploads with Etsy's 5-file / 20 MB guardrails
+- Listing image/file deletion helpers
+- Explicit publish endpoint
+- OpenAPI 3.1 schema in `openapi.yaml`
+- GitHub Actions CI and unit tests
 
-## Endpoints
+## Safety model
+
+OAuth contains `listings_w`, but mutations are still disabled unless the deployment safety switches are enabled:
+
+```text
+ETSY_WRITE_ENABLED=false
+ETSY_PUBLISH_ENABLED=false
+```
+
+`ETSY_WRITE_ENABLED=true` allows draft creation, edits, uploads and image/file deletion. Publishing or setting `state=active` additionally requires `ETSY_PUBLISH_ENABLED=true`.
+
+## Main endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Service health check |
+| GET | `/health` | Health check |
 | GET | `/auth/etsy` | Start Etsy OAuth |
-| GET | `/auth/etsy/callback` | Etsy callback URI |
-| GET | `/auth/status` | Connection/token status |
-| POST | `/auth/disconnect` | Remove stored Etsy token |
-| GET | `/api/etsy/verify` | Safe shop/listing connection check |
-| GET | `/api/etsy/write-status` | Whether listing writes are enabled |
-| GET | `/api/etsy/me` | Authenticated Etsy user info |
-| GET | `/api/etsy/shop` | Connected user's shop |
-| GET | `/api/etsy/listings?state=active&limit=25&offset=0` | Shop listings |
-| GET | `/api/etsy/listings/:listingId?includes=Images,Shop` | Listing details |
-| GET | `/api/etsy/listings/:listingId/images` | Listing images |
-| PATCH | `/api/etsy/listings/:listingId` | Update supported listing fields; write flag required |
+| GET | `/auth/etsy/callback` | Etsy callback |
+| GET | `/api/etsy/verify` | Verify shop/listing reads |
+| GET | `/api/etsy/write-status` | Read safety-switch status |
+| GET | `/api/etsy/shop` | Connected shop |
+| GET | `/api/etsy/listings` | List shop listings |
+| POST | `/api/etsy/listings/drafts` | Create a draft listing |
+| GET/PATCH | `/api/etsy/listings/:listingId` | Read/update listing |
+| POST | `/api/etsy/listings/:listingId/publish` | Publish prepared listing |
+| GET/POST | `/api/etsy/listings/:listingId/images` | Read/upload images |
+| DELETE | `/api/etsy/listings/:listingId/images/:listingImageId` | Delete image |
+| GET/POST | `/api/etsy/listings/:listingId/files` | Read/upload digital files |
+| DELETE | `/api/etsy/listings/:listingId/files/:listingFileId` | Delete digital file |
 
-`/auth/status`, `/auth/disconnect`, and `/api/*` require `Authorization: Bearer <INTERNAL_API_KEY>` in production.
+All `/api/*` endpoints require `Authorization: Bearer <INTERNAL_API_KEY>` in production.
 
-The container-only `GET /internal/etsy/verify` endpoint accepts requests only from loopback and exists for Railway smoke tests without exposing the internal API key publicly.
+### Binary uploads
 
-## Listing updates
-
-Writes require both:
-
-1. an OAuth token containing `listings_w`, and
-2. `ETSY_WRITE_ENABLED=true` in the deployment environment.
-
-The default is **false**, even when the OAuth scope includes `listings_w`.
-
-Example JSON body:
-
-```json
-{
-  "title": "Updated Etsy listing title",
-  "description": "Updated description",
-  "tags": ["spreadsheet", "business template", "etsy seller"],
-  "should_auto_renew": true
-}
-```
-
-Supported update fields are intentionally allowlisted in `src/server.js`. Etsy receives the request as `application/x-www-form-urlencoded`, as required by the Open API v3 `updateListing` endpoint.
-
-## Etsy app setup
-
-1. Open the Seller App in Etsy Developer **Your Apps**.
-2. Add the exact callback URI, for example `https://nexi-etsy-api-production.up.railway.app/auth/etsy/callback`.
-3. Set the app keystring as `ETSY_CLIENT_ID` and shared secret as `ETSY_SHARED_SECRET`.
-4. Keep `ETSY_SCOPES=shops_r listings_r listings_w` for the current integration.
-5. Set the remaining secrets from `.env.example` only in the deployment environment.
-6. Never commit real credentials or the encrypted token file.
+Image and digital-file upload endpoints accept the file bytes as the raw request body. Pass the buyer-visible filename with `?filename=...`. Digital filenames are limited to 70 characters using letters, numbers, `.`, `_`, or `-`, matching Etsy's rules. Digital files are limited to 20 MB each and Etsy allows at most five files per listing.
 
 ## Railway production setup
 
-The current production pattern is:
-
 - service port: `3000`
 - healthcheck: `/health`
-- persistent volume mount: `/app/.data`
+- persistent volume: `etsy-data`
+- volume mount: `/app/.data`
 - token path: `.data/etsy-token.enc`
-- production write flag: keep `ETSY_WRITE_ENABLED=false` until intentional write testing begins
+- callback: `https://nexi-etsy-api-production.up.railway.app/auth/etsy/callback`
+- production start: `npm start` → `node src/server-v2.js`
 
-## Local run
+## Etsy scopes
+
+Current integration:
+
+```text
+shops_r listings_r listings_w
+```
+
+Deleting an entire Etsy listing would require `listings_d`; this service intentionally does not implement that operation.
+
+## Local validation
 
 ```bash
 npm install
@@ -88,8 +84,4 @@ npm test
 npm start
 ```
 
-The application reads configuration directly from environment variables and does not require an env-file loader.
-
-## Next layer
-
-The next implementation layer is digital-product management: draft listing creation, image upload, digital file upload, inventory handling, publishing, and a narrow OpenAPI action schema for controlled automation.
+The application reads configuration directly from environment variables. Real credentials and token files must never be committed.
