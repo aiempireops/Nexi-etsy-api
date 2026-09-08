@@ -11,6 +11,11 @@ function positiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function booleanFlag(value, fallback = false) {
+  if (value == null || value === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
+}
+
 export function loadConfig() {
   const redirectUri = required('ETSY_REDIRECT_URI');
   const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -35,6 +40,7 @@ export function loadConfig() {
     tokenEncryptionSecret: required('TOKEN_ENCRYPTION_SECRET'),
     tokenStorePath: path.resolve(process.env.TOKEN_STORE_PATH || '.data/etsy-token.enc'),
     internalApiKey,
+    etsyWriteEnabled: booleanFlag(process.env.ETSY_WRITE_ENABLED, false),
     secureCookies: redirectUri.startsWith('https://'),
   };
 }
